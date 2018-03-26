@@ -9,6 +9,7 @@
 @interface MusicControlManager ()
 
 @property (nonatomic, copy) NSString *artworkUrl;
+@property (nonatomic, assign) BOOL audioInterruptionsObserved;
 
 @end
 
@@ -78,12 +79,11 @@ RCT_EXPORT_METHOD(updatePlayback:(NSDictionary *) originalDetails)
 
     center.nowPlayingInfo = [self update:mediaDict with:details andSetDefaults:false];
 
-
-    if ([details objectForKey:@"artwork"] != self.artworkUrl) {
-        self.artworkUrl = details[@"artwork"];
-        [self updateArtworkIfNeeded:[details objectForKey:@"artwork"]];
+    NSString *artworkUrl = [self getArtworkUrl:[originalDetails objectForKey:@"artwork"]];
+    if (artworkUrl != self.artworkUrl) {
+        self.artworkUrl = artworkUrl;
+        [self updateArtworkIfNeeded:artworkUrl];
     }
-
 }
 
 
@@ -95,7 +95,8 @@ RCT_EXPORT_METHOD(setNowPlaying:(NSDictionary *) details)
 
     center.nowPlayingInfo = [self update:mediaDict with:details andSetDefaults:true];
 
-  [self updateArtworkIfNeeded:[details objectForKey:@"artwork"]];
+    NSString *artworkUrl = [self getArtworkUrl:[details objectForKey:@"artwork"]];
+    [self updateArtworkIfNeeded:artworkUrl];
 }
 
 RCT_EXPORT_METHOD(resetNowPlaying)
@@ -113,6 +114,9 @@ RCT_EXPORT_METHOD(enableControl:(NSString *) controlName enabled:(BOOL) enabled 
         [self toggleHandler:remoteCenter.pauseCommand withSelector:@selector(onPause:) enabled:enabled];
     } else if ([controlName isEqual: @"play"]) {
         [self toggleHandler:remoteCenter.playCommand withSelector:@selector(onPlay:) enabled:enabled];
+
+    } else if ([controlName isEqual: @"changePlaybackPosition"]) {
+        [self toggleHandler:remoteCenter.changePlaybackPositionCommand withSelector:@selector(onChangePlaybackPosition:) enabled:enabled];
 
     } else if ([controlName isEqual: @"stop"]) {
         [self toggleHandler:remoteCenter.stopCommand withSelector:@selector(onStop:) enabled:enabled];
@@ -158,6 +162,22 @@ RCT_EXPORT_METHOD(enableBackgroundMode:(BOOL) enabled){
     [session setActive: enabled error: nil];
 }
 
+RCT_EXPORT_METHOD(stopControl){
+    [self stop];
+}
+
+RCT_EXPORT_METHOD(observeAudioInterruptions:(BOOL) observe){
+    if (self.audioInterruptionsObserved == observe) {
+        return;
+    }
+    if (observe) {
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(audioInterrupted:) name:AVAudioSessionInterruptionNotification object:nil];
+    } else {
+        [[NSNotificationCenter defaultCenter] removeObserver:self name:AVAudioSessionInterruptionNotification object:nil];
+    }
+    self.audioInterruptionsObserved = observe;
+}
+
 #pragma mark internal
 
 - (NSDictionary *) update:(NSMutableDictionary *) mediaDict with:(NSDictionary *) details andSetDefaults:(BOOL) setDefault {
@@ -186,15 +206,28 @@ RCT_EXPORT_METHOD(enableBackgroundMode:(BOOL) enabled){
 }
 
 - (id)init {
-  self = [super init];
-  [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(audioHardwareRouteChanged:) name:AVAudioSessionRouteChangeNotification object:nil];
-  return self;
+    self = [super init];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(audioHardwareRouteChanged:) name:AVAudioSessionRouteChangeNotification object:nil];
+    self.audioInterruptionsObserved = false;
+    return self;
+}
+
++ (BOOL)requiresMainQueueSetup
+{
+    return YES;
 }
 
 - (void)dealloc {
+    [self stop];
+    [[NSNotificationCenter defaultCenter] removeObserver:self name:AVAudioSessionRouteChangeNotification object:nil];
+}
+
+- (void)stop {
     MPRemoteCommandCenter *remoteCenter = [MPRemoteCommandCenter sharedCommandCenter];
+    [self resetNowPlaying];
     [self toggleHandler:remoteCenter.pauseCommand withSelector:@selector(onPause:) enabled:false];
     [self toggleHandler:remoteCenter.playCommand withSelector:@selector(onPlay:) enabled:false];
+    [self toggleHandler:remoteCenter.changePlaybackPositionCommand withSelector:@selector(onChangePlaybackPosition:) enabled:false];
     [self toggleHandler:remoteCenter.stopCommand withSelector:@selector(onStop:) enabled:false];
     [self toggleHandler:remoteCenter.togglePlayPauseCommand withSelector:@selector(onTogglePlayPause:) enabled:false];
     [self toggleHandler:remoteCenter.enableLanguageOptionCommand withSelector:@selector(onEnableLanguageOption:) enabled:false];
@@ -205,12 +238,13 @@ RCT_EXPORT_METHOD(enableBackgroundMode:(BOOL) enabled){
     [self toggleHandler:remoteCenter.seekBackwardCommand withSelector:@selector(onSeekBackward:) enabled:false];
     [self toggleHandler:remoteCenter.skipBackwardCommand withSelector:@selector(onSkipBackward:) enabled:false];
     [self toggleHandler:remoteCenter.skipForwardCommand withSelector:@selector(onSkipForward:) enabled:false];
+    [self observeAudioInterruptions:false];
     [[NSNotificationCenter defaultCenter] removeObserver:self name:AVAudioSessionRouteChangeNotification object:nil];
 }
 
-
 - (void)onPause:(MPRemoteCommandEvent*)event { [self sendEvent:@"pause"]; }
 - (void)onPlay:(MPRemoteCommandEvent*)event { [self sendEvent:@"play"]; }
+- (void)onChangePlaybackPosition:(MPChangePlaybackPositionCommandEvent*)event { [self sendEventWithValue:@"changePlaybackPosition" withValue:[NSString stringWithFormat:@"%.15f", event.positionTime]]; }
 - (void)onStop:(MPRemoteCommandEvent*)event { [self sendEvent:@"stop"]; }
 - (void)onTogglePlayPause:(MPRemoteCommandEvent*)event { [self sendEvent:@"togglePlayPause"]; }
 - (void)onEnableLanguageOption:(MPRemoteCommandEvent*)event { [self sendEvent:@"enableLanguageOption"]; }
@@ -231,36 +265,45 @@ RCT_EXPORT_METHOD(enableBackgroundMode:(BOOL) enabled){
                        body:@{@"name": event}];
 }
 
-- (void)updateArtworkIfNeeded:(id)artwork
-{
-    NSString *url = nil;
-    if (artwork) {
-        if ([artwork isKindOfClass:[NSString class]]) {
-             url = artwork;
-        } else if ([[artwork valueForKey: @"uri"] isKindOfClass:[NSString class]]) {
-             url = [artwork valueForKey: @"uri"];
-        }
-    }
+- (NSString*)getArtworkUrl:(NSString*)artwork {
+  NSString *artworkUrl = nil;
 
-    if (url != nil) {
-        self.artworkUrl = url;
+  if (artwork) {
+      if ([artwork isKindOfClass:[NSString class]]) {
+           artworkUrl = artwork;
+      } else if ([[artwork valueForKey: @"uri"] isKindOfClass:[NSString class]]) {
+           artworkUrl = [artwork valueForKey: @"uri"];
+      }
+  }
+
+  return artworkUrl;
+}
+
+- (void)sendEventWithValue:(NSString*)event withValue:(NSString*)value{
+   [self sendEventWithName:@"RNMusicControlEvent" body:@{@"name": event, @"value":value}];
+}
+
+- (void)updateArtworkIfNeeded:(id)artworkUrl
+{
+    if (artworkUrl != nil) {
+        self.artworkUrl = artworkUrl;
 
         // Custom handling of artwork in another thread, will be loaded async
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
             UIImage *image = nil;
 
             // check whether artwork path is present
-            if (![url isEqual: @""]) {
+            if (![artworkUrl isEqual: @""]) {
                 // artwork is url download from the interwebs
-                if ([url hasPrefix: @"http://"] || [url hasPrefix: @"https://"]) {
-                    NSURL *imageURL = [NSURL URLWithString:url];
+                if ([artworkUrl hasPrefix: @"http://"] || [artworkUrl hasPrefix: @"https://"]) {
+                    NSURL *imageURL = [NSURL URLWithString:artworkUrl];
                     NSData *imageData = [NSData dataWithContentsOfURL:imageURL];
                     image = [UIImage imageWithData:imageData];
                 } else {
                     // artwork is local. so create it from a UIImage
-                    BOOL fileExists = [[NSFileManager defaultManager] fileExistsAtPath:url];
+                    BOOL fileExists = [[NSFileManager defaultManager] fileExistsAtPath:artworkUrl];
                     if (fileExists) {
-                        image = [UIImage imageNamed:url];
+                        image = [UIImage imageNamed:artworkUrl];
                     }
                 }
             }
@@ -275,10 +318,11 @@ RCT_EXPORT_METHOD(enableBackgroundMode:(BOOL) enabled){
             CIImage *cim = [image CIImage];
 
             if (cim != nil || cgref != NULL) {
+
                 dispatch_async(dispatch_get_main_queue(), ^{
 
                     // Check if URL wasn't changed in the meantime
-                    if ([url isEqual:self.artworkUrl]) {
+                    if ([artworkUrl isEqual:self.artworkUrl]) {
                         MPNowPlayingInfoCenter *center = [MPNowPlayingInfoCenter defaultCenter];
                         MPMediaItemArtwork *artwork = [[MPMediaItemArtwork alloc] initWithImage: image];
                         NSMutableDictionary *mediaDict = (center.nowPlayingInfo != nil) ? [[NSMutableDictionary alloc] initWithDictionary: center.nowPlayingInfo] : [NSMutableDictionary dictionary];
@@ -296,6 +340,23 @@ RCT_EXPORT_METHOD(enableBackgroundMode:(BOOL) enabled){
     if (routeChangeReason == AVAudioSessionRouteChangeReasonOldDeviceUnavailable) {
         //headphones unplugged or bluetooth device disconnected, iOS will pause audio
         [self sendEvent:@"pause"];
+    }
+}
+
+- (void)audioInterrupted:(NSNotification *)notification {
+    if (!self.audioInterruptionsObserved) {
+        return;
+    }
+    NSInteger interruptionType = [notification.userInfo[AVAudioSessionInterruptionTypeKey] integerValue];
+    NSInteger interruptionOption = [notification.userInfo[AVAudioSessionInterruptionOptionKey] integerValue];
+
+    if (interruptionType == AVAudioSessionInterruptionTypeBegan) {
+        // Playback interrupted by an incoming phone call.
+        [self sendEvent:@"pause"];
+    }
+    if (interruptionType == AVAudioSessionInterruptionTypeEnded &&
+           interruptionOption == AVAudioSessionInterruptionOptionShouldResume) {
+        [self sendEvent:@"play"];
     }
 }
 

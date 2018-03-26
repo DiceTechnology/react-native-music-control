@@ -15,7 +15,7 @@ Project using it :
 
 * https://github.com/just-team/react-native-youtube-player
 
-![Image of Yaktocat](./docs/ios.png)
+![iOS lockscreen](./docs/ios.png)
 
 # Install
 
@@ -30,6 +30,12 @@ npm install react-native-music-control --save
 ### Automatic
 
 `react-native link`
+
+:warning: You must enable Audio Background mode in XCode project settings :
+
+![XCode bqckground mode enabled](https://user-images.githubusercontent.com/263097/28630866-beb84094-722b-11e7-8ed2-b495c9f37956.png)
+
+
 
 ### Manual
 
@@ -109,7 +115,8 @@ MusicControl.setNowPlaying({
   description: '', // Android Only
   color: 0xFFFFFF, // Notification Color - Android Only
   date: '1983-01-02T00:00:00Z', // Release Date (RFC 3339) - Android Only
-  rating: 84 // Android Only (Boolean or Number depending on the type)
+  rating: 84, // Android Only (Boolean or Number depending on the type)
+  notificationIcon: 'my_custom_icon' // Android Only (String), Android Drawable resource name for a custom notification icon
 })
 ```
 
@@ -161,28 +168,53 @@ MusicControl.resetNowPlaying()
 **Android**: Notification and external devices (smartwatches, cars)
 
 ```javascript
+// Basic Controls
 MusicControl.enableControl('play', true)
 MusicControl.enableControl('pause', true)
 MusicControl.enableControl('stop', false)
 MusicControl.enableControl('nextTrack', true)
 MusicControl.enableControl('previousTrack', false)
-MusicControl.enableControl('seekForward', false);
-MusicControl.enableControl('seekBackward', false);
+
+// Seeking
+MusicControl.enableControl('seekForward', false) // iOS only
+MusicControl.enableControl('seekBackward', false) // iOS only
 MusicControl.enableControl('seek', false) // Android only
-MusicControl.enableControl('setRating', false) // Android only
-MusicControl.enableControl('volume', true) // Android only  - Only affected when remoteVolume is enabled
-MusicControl.enableControl('remoteVolume', false) // Android only
-MusicControl.enableControl('enableLanguageOption', false); // iOS only
-MusicControl.enableControl('disableLanguageOption', false); // iOS only
-MusicControl.enableControl('skipForward', false); // iOS only
-MusicControl.enableControl('skipBackward', false); // iOS only
+MusicControl.enableControl('skipForward', false)
+MusicControl.enableControl('skipBackward', false)
+
+// Android Specific Options
+MusicControl.enableControl('setRating', false)
+MusicControl.enableControl('volume', true) // Only affected when remoteVolume is enabled
+MusicControl.enableControl('remoteVolume', false)
+
+// iOS Specific Options
+MusicControl.enableControl('enableLanguageOption', false)
+MusicControl.enableControl('disableLanguageOption', false)
 ```
 
-`skipBackward` and `skipForward` controls on iOS accept additional configuration options with `interval` key:
+`skipBackward` and `skipForward` controls on accept additional configuration options with `interval` key:
 
 ```javascript
 MusicControl.enableControl('skipBackward', true, {interval: 15}))
 MusicControl.enableControl('skipForward', true, {interval: 30}))
+```
+
+Important Notes: 
+* Android only supports the intervals 5, 10, & 30, while iOS supports any number
+* The interval value only changes what number displays in the UI, the actual logic to skip forward or backward by a given amount must be implemented in the appropriate callbacks
+* When using [react-native-sound](https://github.com/zmxv/react-native-sound) for audio playback, make sure that on iOS `mixWithOthers` is set to `false` in [`Sound.setCategory(value, mixWithOthers)`](https://github.com/zmxv/react-native-sound#soundsetcategoryvalue-mixwithothers-ios-only). MusicControl will not work on a real device when this is set to `true`.
+
+There is also a `closeNotification` control on Android controls the swipe behavior of the audio playing notification, and accepts additional configuration options with the `when` key:
+
+```javascript
+// Always allow user to close notification on swipe
+MusicControl.enableControl('closeNotification', true, {when: 'always'})
+
+// Default - Allow user to close notification on swipe when audio is paused
+MusicControl.enableControl('closeNotification', true, {when: 'paused'})
+
+// Never allow user to close notification on swipe
+MusicControl.enableControl('closeNotification', true, {when: 'never'})
 ```
 
 ### Register to events
@@ -191,12 +223,15 @@ MusicControl.enableControl('skipForward', true, {interval: 30}))
 componentDidMount() {
     MusicControl.enableBackgroundMode(true);
 
+    // on iOS, pause playback during audio interruptions (incoming calls) and resume afterwards.
+    MusicControl.handleAudioInterruptions(true);
+
     MusicControl.on('play', ()=> {
       this.props.dispatch(playRemoteControl());
     })
 
-    // on iOS this event will also be triggered by the audio router change event.
-    // This happens when headphones are unplugged or a bluetooth audio peripheral disconnects from the device
+    // on iOS this event will also be triggered by audio router change events
+    // happening when headphones are unplugged or a bluetooth audio peripheral disconnects from the device
     MusicControl.on('pause', ()=> {
       this.props.dispatch(pauseRemoteControl());
     })
@@ -225,12 +260,27 @@ componentDidMount() {
     MusicControl.on('togglePlayPause', ()=> {}); // iOS only
     MusicControl.on('enableLanguageOption', ()=> {}); // iOS only
     MusicControl.on('disableLanguageOption', ()=> {}); // iOS only
-    MusicControl.on('skipForward', ()=> {}); // iOS only
-    MusicControl.on('skipBackward', ()=> {}); // iOS only
+    MusicControl.on('skipForward', ()=> {});
+    MusicControl.on('skipBackward', ()=> {});
+
+    // Android Only
+    MusicControl.on('closeNotification', ()=> {
+      this.props.dispatch(onAudioEnd());
+    })
 }
 ```
 
+### Customization
 
+It is possible to customize the icon used in the notification on Android.
+By default you can add a drawable resource to your package with the file name `music_control_icon` and the notification will use your custom icon.
+If you need to specify a custom icon name, or change your notification icon during runtime, the `setNowPlaying` function accepts a string 
+for an Android drawable resource name in the `notificationIcon` prop. Keep in mind that just like with `music_control_icon` the resource specified has
+to be in the drawable package of your Android app.
+
+```javascript
+  MusicControl.setCustomNotificationIcon('my_custom_icon');
+```
 
 # TODOS
 

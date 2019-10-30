@@ -4,7 +4,6 @@ import android.content.ComponentCallbacks2;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.content.res.Resources;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -16,8 +15,8 @@ import android.support.v4.media.MediaMetadataCompat;
 import android.support.v4.media.RatingCompat;
 import android.support.v4.media.session.MediaSessionCompat;
 import android.support.v4.media.session.PlaybackStateCompat;
-import android.support.v4.app.NotificationCompat.Builder;
-import android.support.v4.media.app.NotificationCompat.MediaStyle;
+import androidx.media.app.NotificationCompat.MediaStyle;
+
 import android.util.Log;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
@@ -41,7 +40,7 @@ public class MusicControlModule extends ReactContextBaseJavaModule implements Co
 
     private MediaMetadataCompat.Builder md;
     private PlaybackStateCompat.Builder pb;
-    private android.support.v4.app.NotificationCompat.Builder nb;
+    private androidx.core.app.NotificationCompat.Builder nb;
 
     private PlaybackStateCompat state;
 
@@ -108,7 +107,7 @@ public class MusicControlModule extends ReactContextBaseJavaModule implements Co
         md = new MediaMetadataCompat.Builder();
         pb = new PlaybackStateCompat.Builder();
         pb.setActions(controls);
-        nb = new android.support.v4.app.NotificationCompat.Builder(context);
+        nb = new androidx.core.app.NotificationCompat.Builder(context);
         nb.setStyle(new MediaStyle().setMediaSession(session.getSessionToken()));
 
         state = pb.build();
@@ -183,7 +182,7 @@ public class MusicControlModule extends ReactContextBaseJavaModule implements Co
         String description = metadata.hasKey("description") ? metadata.getString("description") : null;
         String date = metadata.hasKey("date") ? metadata.getString("date") : null;
         long duration = metadata.hasKey("duration") ? (long)(metadata.getDouble("duration") * 1000) : 0;
-        int notificationColor = metadata.hasKey("color") ? metadata.getInt("color") : android.support.v4.app.NotificationCompat.COLOR_DEFAULT;
+        int notificationColor = metadata.hasKey("color") ? metadata.getInt("color") : androidx.core.app.NotificationCompat.COLOR_DEFAULT;
         String notificationIcon = metadata.hasKey("notificationIcon") ? metadata.getString("notificationIcon") : null;
 
         RatingCompat rating;

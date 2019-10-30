@@ -5,12 +5,10 @@ import android.app.Service;
 import android.content.Intent;
 import android.content.res.Resources;
 import android.os.IBinder;
-import android.support.v4.app.NotificationManagerCompat;
+import androidx.core.app.NotificationManagerCompat;
 import android.support.v4.media.session.PlaybackStateCompat;
-import android.support.v4.app.NotificationCompat.Builder;
 import android.view.KeyEvent;
 import com.facebook.react.bridge.ReactApplicationContext;
-import com.facebook.react.bridge.ReadableMap;
 
 import java.util.Map;
 
@@ -25,7 +23,7 @@ public class MusicControlNotification {
 
     private int smallIcon;
     private int customIcon;
-    private android.support.v4.app.NotificationCompat.Action play, pause, stop, next, previous, skipForward, skipBackward;
+    private androidx.core.app.NotificationCompat.Action play, pause, stop, next, previous, skipForward, skipBackward;
 
     public MusicControlNotification(MusicControlModule module, ReactApplicationContext context) {
         this.context = context;
@@ -71,7 +69,7 @@ public class MusicControlNotification {
         }
     }
 
-    public synchronized void show(android.support.v4.app.NotificationCompat.Builder builder, boolean isPlaying) {
+    public synchronized void show(androidx.core.app.NotificationCompat.Builder builder, boolean isPlaying) {
         // Add the buttons
         builder.mActions.clear();
         if(previous != null) builder.addAction(previous);
@@ -136,7 +134,7 @@ public class MusicControlNotification {
         return KeyEvent.KEYCODE_UNKNOWN;
     }
 
-    private android.support.v4.app.NotificationCompat.Action createAction(String iconName, String title, long mask, long action, android.support.v4.app.NotificationCompat.Action oldAction) {
+    private androidx.core.app.NotificationCompat.Action createAction(String iconName, String title, long mask, long action, androidx.core.app.NotificationCompat.Action oldAction) {
         if((mask & action) == 0) return null; // When this action is not enabled, return null
         if(oldAction != null) return oldAction; // If this action was already created, we won't create another instance
 
@@ -152,7 +150,7 @@ public class MusicControlNotification {
         intent.putExtra(PACKAGE_NAME, packageName);
         PendingIntent i = PendingIntent.getBroadcast(context, keyCode, intent, PendingIntent.FLAG_UPDATE_CURRENT);
 
-        return new android.support.v4.app.NotificationCompat.Action(icon, title, i);
+        return new androidx.core.app.NotificationCompat.Action(icon, title, i);
     }
 
     public static class NotificationService extends Service {

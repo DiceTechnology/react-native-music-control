@@ -1,7 +1,7 @@
 package com.tanguyantoine.react;
 
 import android.support.v4.media.RatingCompat;
-import android.support.v4.media.VolumeProviderCompat;
+import androidx.media.VolumeProviderCompat;
 import android.support.v4.media.session.MediaSessionCompat;
 import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.ReactApplicationContext;
